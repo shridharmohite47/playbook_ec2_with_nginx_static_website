@@ -1,0 +1,178 @@
+- hosts: localhost
+  gather_facts: no
+  #vars_files:
+  #  - keys.yml
+
+  vars:
+    key_name: interview-ansible-1605089564
+    region: us-east-1
+    image: ami-9dcfdb8a # ami-00ddb0e5626798373 # https://cloud-images.ubuntu.com/locator/ec2/
+    id: "interview-ansible-1605089564"
+    instance_type: t2.micro
+    sec_group: "{{ id }}"
+    vpc_subnet_id: subnet-938a47a2 #subnet-02370d8d2522818db  #subnet-08d66b26
+    groupname: demogroup
+    hoststring: "ansible_ssh_user=ubuntu ansible_ssh_private_key_file=/home/pm/.ssh/interview-ansible-1605089564"
+
+  tasks:
+
+    - name: Create security group
+      ec2_group:
+        name: "{{ sec_group }}"
+        description: "Sec group for app {{ id }}"
+        #vpc_subnet_id: "{{ vpc_subnet_id }}"
+        region: "{{ region }}"
+        aws_access_key: "{{ec2_access_key}}"
+        aws_secret_key: "{{ec2_secret_key}}"
+        rules:
+          - proto: tcp
+            ports:
+              - 22
+            cidr_ip: 0.0.0.0/0
+            rule_desc: allow all on ssh port
+          - proto : tcp
+            ports:
+              - 80
+            cidr_ip: 0.0.0.0/0
+            rule_desc: allow all on hhtp port
+        rules_egress:
+          - proto: all
+            cidr_ip: 0.0.0.0/0
+      register: result_sec_group
+
+    - name: Ensure tags are present on a Security group resource
+      amazon.aws.ec2_tag:
+        region: "{{ region }}"
+        resource: "{{ result_sec_group.group_id }}"
+        state: present
+        tags:
+          Name: interview_ansible_1605089564
+
+    - name: Provision instance
+      ec2:
+        aws_access_key: "{{ ec2_access_key }}"
+        aws_secret_key: "{{ ec2_secret_key }}"
+        ec2_region: "{{ region }}"
+        instance_type: t2.micro
+        keypair: "{{ key_name }}"#interview-ansible-1605089564
+        image: ami-9dcfdb8a #RHEL 8 #change this
+        assign_public_ip: yes
+        vpc_subnet_id: "{{ vpc_subnet_id }}" #subnet-02370d8d2522818db
+        group: interview-ansible-1605089564 #demoSG
+        wait: true
+        exact_count: 1
+        count_tag:
+          Name: interview-ansible-1605089564
+        instance_tags:
+          Name: interview-ansible-1605089564
+      register: ec2
+    - debug:
+        var: ec2
+    
+    #- name: save IP to inventory file
+    #  copy: 
+    #    content: "[launched]{{'n'}}{{ item.public_ip }}" 
+    #    dest: ./data.txt
+    #  with_items: "{{ ec2.instances }}"
+
+
+
+    - name: Add the newly created EC2 instance(s) to the local host group
+      lineinfile: 
+        dest: /home/pm/AWS_Ansible/hosts
+        regexp: "{{ item.public_ip }}"
+        insertafter: "[launched]" 
+        line: '{{ item.public_ip }} {{hoststring}}'
+        state: present
+      with_items: '{{ec2.instances}}'
+
+
+    #- name: add host to inventory
+    #  add_host:
+    #    hostname: '{{ item.public_ip }}'
+    #    groupname: demogroup 
+    #    ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+    #    ansible_ssh_private_key_file: /home/pm/.ssh/interview-ansible-1605089564
+    #  loop: '{{ ec2.instances }}'
+   
+    #- name: Add all hosts running this playbook to the done group
+    #  add_host:
+    #    hostname: '{{ item.public_ip }}'
+    #    groups: done
+    #    inventory_dir: /home/pm/AWS_Ansible/
+    #  loop: '{{ ec2.instances }}' 
+
+    #- name: Add the newly created EC2 instance(s) to the local host group
+    #  local_action: lineinfile 
+    #                path=/home/pm/AWS_Ansible/hosts
+    #                regexp={{ item.public_ip }} 
+    #                insertafter='python' line={{ item.public_ip }}
+    #  with_items: '{{ec2.instances}}'
+
+    #- name: Add new instance to Crunchify's host group
+    #  add_host:
+    #    hostname: "{{ item.public_ip }}"
+    #    groupname: launched
+    #  with_items: "{{ ec2.instances }}"
+
+
+
+    #- name: Add new instance to host group
+    #  add_host: hostname={{ item.public_ip }} groupname={{ groupname }}
+    #  with_items: "{{ ec2.instances }}"
+        
+
+- hosts: launched 
+  gather_facts: no
+  remote_user: ubuntu
+  tasks:
+    - name: wait for SSH
+      wait_for_connection:
+        delay: 5
+        timeout: 90
+
+    - name: Check host status
+      ping:
+
+
+- hosts: launched
+  remote_user: ubuntu
+  become: True
+  tasks:
+
+    - name: Update remote ubuntu OS
+      apt: update_cache=yes force_apt_get=yes cache_valid_time=3600 
+
+
+    - name: Install nginx
+      apt:
+        name: nginx
+        state: present
+
+    - name: Create default index page
+      copy:
+        src: /home/pm/AWS_Ansible/index.html
+        dest: /var/www/html/
+        #dest: /usr/share/nginx/html/
+        #content: "Howdy from {{ ansible_hostname }}"
+       
+    - name: check whenther original index.html file present at /var/www/html or not
+      stat: path=/var/www/html/index.nginx-debian.html
+      register: index_nginx_debian_html_file_present
+
+    - name: Rename original nginx index.html file     
+      command: mv /var/www/html/index.nginx-debian.html /var/www/html/index.nginx-debian.html_ORIG
+      when: index_nginx_debian_html_file_present.stat.exists
+
+    - name: Restart nginx
+      service:
+        name: nginx
+        state: restarted
+
+
+    - name: Check nginx service status
+      command: service nginx status
+      register: nginx_status
+
+
+

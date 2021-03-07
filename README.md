@@ -1,2 +1,2 @@
-# playbook_ec2_with_nginx_static_website
-ansible playbook for launching ec2 instance and hosting static website using nginx
+# ec2_provision_with_nginx_static_webhosting
+Ansible playbook with creation of ec2 instance and installing nginx(and static web hosting using nginx)
