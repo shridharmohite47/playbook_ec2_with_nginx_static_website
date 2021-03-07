@@ -1,0 +1,3 @@
+# Please use below command to execute playbook
+
+ansible-playbook -i hosts 1_ec2_provision.yml --ask-vault-pass
